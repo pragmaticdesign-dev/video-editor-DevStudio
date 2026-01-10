@@ -1,6 +1,7 @@
 // src/App.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { Settings, Play, Pause, Monitor, Maximize, X, Download, Upload } from 'lucide-react';
+// Added 'FilePlus' to imports
+import { Settings, Play, Pause, Monitor, Maximize, X, Download, Upload, FilePlus } from 'lucide-react';
 import { startLoop, stopLoop } from './engine/loop';
 import { Renderer } from './components/stage/Renderer';
 import { useStore } from './store/useStore';
@@ -9,10 +10,12 @@ import { Timeline } from './components/timeline/Timeline';
 import { ProjectSettings } from './components/common/ProjectSettings';
 import { AudioRenderer } from './components/stage/AudioRenderer';
 import type { ProjectSchema } from './types/schema';
-import { useAutosave } from './hooks/useAutosave'; // <--- NEW IMPORT
+// Import the key so we can clear it
+import { useAutosave, AUTOSAVE_KEY } from './hooks/useAutosave'; 
 
 function App() {
-  const { isPlaying, setIsPlaying, currentTime, selectObject, selectedObjectId, project, setTime, loadProject } = useStore();
+  // Added createNewProject to destructuring
+  const { isPlaying, setIsPlaying, currentTime, selectObject, selectedObjectId, project, setTime, loadProject, createNewProject } = useStore();
   const [showSettings, setShowSettings] = useState(false);
 
   // --- ACTIVATE AUTOSAVE ---
@@ -28,6 +31,16 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { width, height } = project.meta;
+
+  // --- HANDLER: CREATE NEW PROJECT ---
+  const handleNewProject = () => {
+    if (confirm('Create new project? Unsaved changes will be lost.')) {
+        // 1. Clear autosave from local storage
+        localStorage.removeItem(AUTOSAVE_KEY);
+        // 2. Reset Store
+        createNewProject();
+    }
+  };
 
   // --- SAVE / LOAD HANDLERS ---
   const handleSaveProject = () => {
@@ -103,33 +116,51 @@ function App() {
   // 2. Keyboard Shortcuts 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
 
-      switch (e.key) {
+      // --- 1. GLOBAL SHORTCUTS (Work everywhere) ---
+
+      // Cmd + K: Play/Pause
+      if (isCmdOrCtrl && e.code === 'KeyK') {
+         e.preventDefault();
+         setIsPlaying(!useStore.getState().isPlaying);
+         return;
+      }
+
+      // Cmd + S: Save
+      if (isCmdOrCtrl && e.code === 'KeyS') {
+        e.preventDefault();
+        handleSaveProject();
+        return;
+      }
+
+      // Cmd + Enter: Reset to Start
+      if (isCmdOrCtrl && e.code === 'Enter') {
+          e.preventDefault(); 
+          setTime(0);
+          return;
+      }
+
+      // --- 2. NON-TYPING SHORTCUTS ---
+      const target = e.target as HTMLElement;
+      const isTyping = ['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable;
+      
+      if (isTyping) return;
+
+      switch (e.code) {
         case 'Escape':
           if (isPresentationMode) setPresentationMode(false);
           break;
-        case ' ':
-          e.preventDefault();
-          setIsPlaying(!useStore.getState().isPlaying);
-          break;
         case 'Home':       
-        case 'Enter':      
           e.preventDefault(); 
           setTime(0);
-          break;
-        case 's':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            handleSaveProject();
-          }
           break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPresentationMode, project]); 
-
+  }, [isPresentationMode, project]);
+  
   useEffect(() => {
     startLoop();
     return () => stopLoop();
@@ -152,6 +183,16 @@ function App() {
           <div className="flex items-center gap-4">
             
             <div className="flex items-center gap-1 mr-4 border-r border-gray-700 pr-4">
+              {/* NEW PROJECT BUTTON */}
+              <button
+                onClick={handleNewProject}
+                className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 border border-blue-400"
+                title="Create New Project"
+              >
+                <FilePlus size={14} />
+                NEW
+              </button>
+
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-600"

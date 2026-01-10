@@ -2,7 +2,8 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 
-const AUTOSAVE_KEY = 'devstudio_autosave_v1';
+// CHANGE: Added 'export' so App.tsx can clear this key
+export const AUTOSAVE_KEY = 'devstudio_autosave_v1';
 
 export const useAutosave = () => {
   const { project, loadProject } = useStore();
@@ -36,17 +37,14 @@ export const useAutosave = () => {
       
       try {
         // --- OPTIMIZATION: STRIP BASE64 DATA ---
-        // We use a custom 'replacer' function for JSON.stringify.
-        // If a value is a huge Base64 string (Image/Audio), we skip it to save space.
         const safeJson = JSON.stringify(currentProject, (key, value) => {
           if (typeof value === 'string' && value.startsWith('data:')) {
-            return undefined; // Do not save this heavy data to LocalStorage
+            return undefined; 
           }
           return value;
         });
 
         localStorage.setItem(AUTOSAVE_KEY, safeJson);
-        // console.log(`[Autosave] Saved lightweight state for ${currentProject.name}`);
       } catch (err) {
         console.warn("[Autosave] Quota exceeded or error", err);
       }
