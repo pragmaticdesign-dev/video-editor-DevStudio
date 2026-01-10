@@ -14,7 +14,7 @@ In traditional editors, moving an object requires setting Keyframe A and Keyfram
 In **DevStudio**, you write a render function. The engine calls this function 60 times a second, passing the current timestamp (`t`). Your code simply returns the CSS state for that specific millisecond.
 
 * **No Keyframes:** You don't "move" objects. You define their existence relative to time.
-* **Infinite Control:** You have full access to Math.sin(), interpolation, and conditional logic inside every object.
+* **Infinite Control:** You have full access to `Math.sin()`, interpolation, and conditional logic inside every object.
 * **Browser Native:** If you can do it in CSS/HTML (Flexbox, Grid, Borders, Shadows), you can do it in your video.
 
 ---
@@ -34,20 +34,22 @@ Every element on screen (Text, Box, Image, SVG) is a standard DOM element wrappe
     * `id`: Unique identifier (e.g., `obj_array_box`).
     * `start`: Timestamp when it appears.
     * `duration`: How long it stays.
-    * `type`: Div, Image, or Custom Component.
 * **Styling (The "Logic" Hook):**
     Instead of static CSS, every object has a `logic` function string that executes every frame.
-    * **Input:** `t` (Current Time), `start`, `duration`.
+    * **Input:** `t` (Current Time), `start`, `duration`, `props` (Static Props), `query` (Find other objects), `ease` (GSAP Library).
     * **Output:** A CSS Object (e.g., `{ opacity: 0.5, transform: '...' }`).
 
     ```javascript
-    // Example: A box that slides in and pulses color
-    const progress = (t - start) / duration;
-    const slide = progress * 100; // Move 100px
+    // Example: A box that slides in with an Elastic easing
+    const p = (t - start) / duration; // 0 to 1 progress
+    
+    // Use the injected 'ease' (GSAP) for smooth animation
+    const y = ease.elastic.out(p) * 200; 
+
     return {
-       display: 'block',
-       transform: `translateX(${slide}px)`,
-       background: progress > 0.5 ? 'red' : 'blue' // Conditional Styling!
+       display: 'flex',
+       transform: `translateY(${y}px)`,
+       background: p > 0.5 ? 'red' : 'blue' // Conditional Styling!
     };
     ```
 
@@ -62,99 +64,206 @@ A visual interface to manage the "When," while code manages the "How."
 Audio is treated as a "Global Reference."
 * **Workflow:** You upload an MP3 (e.g., voiceover).
 * **Sync:** You play the audio. When you hear a specific word (e.g., "Binary Search" at 0:05), you simply drag your "Array Object" on the timeline to start at 0:05.
-* **Preview:** Pressing Spacebar plays the audio via `Howler.js` and runs the `requestAnimationFrame` loop in perfect sync.
 
-### 5. Export (Rendering)
-Since the output is just an HTML Canvas/DOM stream:
-* **Technique:** We use the native `MediaRecorder` API.
-* **Process:** The engine locks the timeline, steps through it frame-by-frame (or plays realtime), captures the canvas stream, and compiles it into a `.webm` or `.mp4` video file directly in the browser.
+### 5. Advanced System Design (Querying)
+Objects can "talk" to each other using the `query()` function. This is critical for connecting arrows or dynamic layouts.
+* *Example:* An Arrow object can ask for the position of "Box A" and "Box B" and draw a line between them automatically, even if the boxes are moving.
 
 ---
 
-## 🏗 System Architecture & Tech Stack
+## 🏗 System Architecture & Performance
 
-This project is a Single Page Application (SPA) built for performance.
+This project is a Single Page Application (SPA) optimized for 60fps playback.
 
 ### Tech Stack
-* **Core:** [React 18](https://react.dev/) (UI Components) + [Vite](https://vitejs.dev/) (Build Tool).
-* **Language:** [TypeScript](https://www.typescriptlang.org/) (Strict typing for Schema validation).
-* **State Management:** [Zustand](https://github.com/pmndrs/zustand) (Handling the high-frequency 60fps loop outside React's render cycle).
-* **Editor:** [Monaco Editor](https://github.com/suren-atoyan/monaco-react) (The VS Code editing experience embedded).
-* **Animation Engine:** [GSAP](https://greensock.com/gsap/) (For timeline seeking and easing math).
-* **Styling:** [Tailwind CSS](https://tailwindcss.com/) (Layout) + [Lucide React](https://lucide.dev/) (Icons).
+* **Core:** [React 19](https://react.dev/) + [Vite](https://vitejs.dev/)
+* **State Management:** [Zustand](https://github.com/pmndrs/zustand) (Handling the high-frequency loop outside React's render cycle).
+* **Editor:** [Monaco Editor](https://github.com/suren-atoyan/monaco-react).
+* **Animation Engine:** [GSAP](https://greensock.com/gsap/) (Injected as `ease` into user scope).
 
-### File Structure & Responsibilities
+### The Rendering Pipeline
+1. **The Loop:** `requestAnimationFrame` updates `currentTime` in the Zustand store.
+2. **The Renderer:** The `Renderer` component subscribes to the store.
+3. **JIT Compilation (Caching):**
+   To avoid the performance hit of `new Function()` on every frame, the Renderer maintains a **Logic Cache**. User code is only compiled when the string changes.
+4. **Frame Cache:**
+   To allow objects to query each other without infinite recursion or double-calculation, the state of every object is cached for the duration of the single frame.
+
+### File Structure
 
 ```text
 src/
 ├── types/
 │   └── schema.ts          # DEFINES THE SAVE FILE FORMAT.
-│                          # Interfaces for Project, Track, VisualObject.
 ├── store/
-│   └── useStore.ts        # THE BRAIN.
-│                          # Holds 'currentTime', 'isPlaying', and the big 'project' JSON.
-│                          # Actions: addTrack, updateObject, play, pause.
+│   └── useStore.ts        # THE BRAIN (Time & Project State).
 ├── engine/
-│   └── loop.ts            # THE HEARTBEAT.
-│                          # Runs requestAnimationFrame.
-│                          # Calculates 'delta' time.
-│                          # Triggers the 'render()' function for all objects.
+│   └── loop.ts            # THE HEARTBEAT (RAF Loop).
+├── registry/              # OBJECT DEFINITIONS
+│   ├── index.ts           # Central registry of all object types
+│   └── definitions/       # Individual object logic (Box, Text, Custom)
 ├── components/
 │   ├── stage/
-│   │   ├── Stage.tsx      # The 1920x1080 Container.
-│   │   └── Renderer.tsx   # The component that actually maps JSON -> DOM elements.
+│   │   ├── Renderer.tsx   # THE ENGINE. Handles JIT Compilation & Rendering.
+│   │   └── AudioRenderer.tsx
 │   ├── editor/
-│   │   └── Inspector.tsx  # The Right Panel.
-│   │                      # Contains the Monaco Editor where you write the JS logic.
-│   └── timeline/
-│       ├── Timeline.tsx   # The Bottom Panel.
-│       ├── TrackBar.tsx   # The draggable green bars.
-│       └── AudioTrack.tsx # The visual waveform.
-└── App.tsx                # Layout Grid.
+│   │   └── Inspector.tsx  # Monaco Editor Integration.
+│   └── timeline/          # Visual Timeline Components.
+└── App.tsx
+```
 
+## 🧩 How to Create Custom Objects
+
+DevStudio is designed to be extensible. You can add new types of objects (e.g., a "Tweet Card," "Terminal Window," or "Progress Bar") by following these two steps.
+
+### Step 1: Create the Component Definition
+Create a new file: `src/registry/definitions/ProgressBar.tsx`.
+
+A custom object definition has two parts:
+1. **The Config:** Metadata like the display name and default properties.
+2. **The Component:** A standard React component that receives the computed `state`.
+
+```
+// src/registry/definitions/ProgressBar.tsx
+import React from 'react';
+import { ObjectDefinition, ObjectProps } from '../types';
+
+// 1. The React Component
+// 'state' is the calculated result from the user's Logic code (CSS/JS).
+const ProgressBarComponent: React.FC<ObjectProps> = ({ state }) => {
+  return (
+    <div 
+      style={{ 
+        width: '100%', 
+        height: '100%', 
+        border: '2px solid #333',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        // We allow the user to override background color via logic
+        background: state.backgroundColor || '#1e1e1e' 
+      }}
+    >
+      <div 
+        style={{
+          height: '100%',
+          background: state.barColor || '#00ff00',
+          // The width is controlled by the logic engine!
+          width: `${state.progress || 0}%`, 
+          transition: 'width 0.1s linear'
+        }} 
+      />
+    </div>
+  );
+};
+
+// 2. The Definition
+export const ProgressBarDefinition: ObjectDefinition = {
+  id: 'progress_bar', // Internal type ID
+  label: 'Progress Bar', // UI Label
+  Component: ProgressBarComponent,
+  
+  // These properties appear in the "Inspector" panel
+  defaultProperties: {
+    backgroundColor: '#1e1e1e',
+    barColor: '#00ff00',
+    progress: 0
+  },
+  
+  // The default Logic code that users will see when they add this object
+  defaultLogic: `
+// Standard Progress Logic
+const p = (t - start) / duration; // 0.0 to 1.0
+return {
+  progress: p * 100, // Drive the width
+  barColor: p > 0.8 ? 'red' : '#00ff00' // Change color near end
+};
+`
+};
 
 ```
 
-Developer Workflow (How to use it)
-Setup:
+### Step 2: Register it
 
-Clone repo.
+Open `src/registry/index.ts` and add your new definition to the list.
 
-npm install
+```typescript
+// src/registry/index.ts
+import { ProgressBarDefinition } from './definitions/ProgressBar'; 
 
-npm run dev
+// ... other imports
 
-Import Assets:
+export const OBJECT_DEFINITIONS: Record<string, ObjectDefinition> = {
+    // ... existing objects
+    progress_bar: ProgressBarDefinition, // <--- Add this line
+};
 
-Drag voiceover.mp3 into the timeline.
+```
 
-Drafting:
+That's it! The "Progress Bar" will now appear in your "Add Object" menu.
 
-Scrub to a timestamp.
+---
 
-Click "Add Object" (Text, Div, or Image).
+## 🧠 Writing Logic Code (The User Guide)
 
-A default object appears.
+When you select an object in the editor, you see a code editor. This is the **Render Function**. It runs 60 times a second.
 
-Coding Behavior:
+### Available Variables
 
-Select the object.
+| Variable | Type | Description |
+| --- | --- | --- |
+| `t` | `number` | Current global time (in seconds). |
+| `start` | `number` | When this object appears (seconds). |
+| `duration` | `number` | How long this object lasts (seconds). |
+| `props` | `object` | The static properties set in the inspector (e.g., color, text). |
+| `ease` | `GSAP` | The full GSAP Easing library. |
+| `query` | `fn` | `query('id')` returns the current state of another object. |
 
-In the Inspector, switch to "Code" tab.
+### Recipes
 
-Write your CSS logic: return { opacity: (t-start)/duration }.
+#### 1. Basic Movement
 
-Hit Ctrl+S to apply instantly.
+```javascript
+// Slide from left (0px) to right (500px)
+const p = (t - start) / duration; // 0 to 1
+const x = p * 500;
+return { transform: `translateX(${x}px)` };
 
-Refining:
+```
 
-Drag the timeline bars to adjust timing.
+#### 2. Smooth Animation (Easing)
 
-Use the "Scrubber" to verify the animation frame-by-frame.
+```javascript
+const p = (t - start) / duration;
+// Use Elastic easing for a bouncy effect
+const scale = ease.elastic.out(p); 
+return { 
+    transform: `scale(${scale})`,
+    opacity: p
+};
 
-Export:
+```
 
-Click "Render Video".
+#### 3. Connecting Objects (The Arrow)
 
-Download the final .webm file.
+*Scenario: You want an arrow to always point from "Box A" to "Box B", even if they move.*
+
+```javascript
+// Get the LIVE state of other objects
+const boxA = query('box_a');
+const boxB = query('box_b');
+
+if (!boxA || !boxB) return { opacity: 0 };
+
+// Calculate distance/angle (simplified)
+const dx = boxB.x - boxA.x;
+const dy = boxB.y - boxA.y;
+const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+return {
+    left: boxA.x,
+    top: boxA.y,
+    width: Math.sqrt(dx*dx + dy*dy),
+    transform: `rotate(${angle}deg)`
+};
+
 ```
