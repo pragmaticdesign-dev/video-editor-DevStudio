@@ -1,5 +1,6 @@
+// src/App.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { Settings, Play, Pause, Monitor, Maximize, X } from 'lucide-react';
+import { Settings, Play, Pause, Monitor, Maximize, X, Download, Upload } from 'lucide-react';
 import { startLoop, stopLoop } from './engine/loop';
 import { Renderer } from './components/stage/Renderer';
 import { useStore } from './store/useStore';
@@ -7,42 +8,94 @@ import { Inspector } from './components/editor/Inspector';
 import { Timeline } from './components/timeline/Timeline';
 import { ProjectSettings } from './components/common/ProjectSettings';
 import { AudioRenderer } from './components/stage/AudioRenderer';
+import type { ProjectSchema } from './types/schema';
+import { useAutosave } from './hooks/useAutosave'; // <--- NEW IMPORT
 
 function App() {
-  const { isPlaying, setIsPlaying, currentTime, selectObject, selectedObjectId, project, setTime } = useStore();
+  const { isPlaying, setIsPlaying, currentTime, selectObject, selectedObjectId, project, setTime, loadProject } = useStore();
   const [showSettings, setShowSettings] = useState(false);
+
+  // --- ACTIVATE AUTOSAVE ---
+  useAutosave(); 
+  // -------------------------
 
   // --- PRESENTATION MODE STATE ---
   const [isPresentationMode, setPresentationMode] = useState(false);
   const [scale, setScale] = useState(0.5);
-  const containerRef = useRef<HTMLDivElement>(null); // Ref to measure available space
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Hidden input for file upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { width, height } = project.meta;
+
+  // --- SAVE / LOAD HANDLERS ---
+  const handleSaveProject = () => {
+    // 1. Convert project state to JSON string
+    const data = JSON.stringify(project, null, 2);
+    
+    // 2. Create a blob and url
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // 3. Trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Use the Project Name for the filename (sanitize it)
+    const safeName = (project.name || 'Untitled').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    link.download = `${safeName}.devstudio.json`;
+    
+    document.body.appendChild(link);
+    link.click();
+    
+    // 4. Cleanup
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOpenProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = event.target?.result as string;
+        const parsed: ProjectSchema = JSON.parse(json);
+        
+        if(parsed.meta && Array.isArray(parsed.objects)) {
+          loadProject(parsed);
+          alert(`Project "${parsed.name || 'Untitled'}" loaded!`);
+        } else {
+          alert('Error: Invalid project file format.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Error parsing JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   // 1. Unified Smart Scaling Logic
   useEffect(() => {
     const handleResize = () => {
       if (isPresentationMode) {
-        // Presentation: Fit Full Screen (Window dimensions)
         const scaleX = window.innerWidth / width;
         const scaleY = window.innerHeight / height;
         setScale(Math.min(scaleX, scaleY) * 0.95);
       } else {
-        // Editor: Fit within the containerRef (The center gray area)
-        // We fallback to window math if ref isn't ready yet
-        const availableW = containerRef.current?.clientWidth || (window.innerWidth - 384); // 384 = sidebar width
-        const availableH = containerRef.current?.clientHeight || (window.innerHeight - 320 - 56); // 320=timeline, 56=toolbar
-
-        // Add some padding (e.g. 40px) so it doesn't touch edges
+        const availableW = containerRef.current?.clientWidth || (window.innerWidth - 384); 
+        const availableH = containerRef.current?.clientHeight || (window.innerHeight - 320 - 56);
         const scaleX = (availableW - 40) / width;
         const scaleY = (availableH - 40) / height;
-
-        // "Contain" logic: take the smaller dimension
         setScale(Math.min(scaleX, scaleY));
       }
     };
 
-    handleResize(); // Initial calc
+    handleResize(); 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [isPresentationMode, width, height]);
@@ -50,7 +103,6 @@ function App() {
   // 2. Keyboard Shortcuts 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
       switch (e.key) {
@@ -61,16 +113,22 @@ function App() {
           e.preventDefault();
           setIsPlaying(!useStore.getState().isPlaying);
           break;
-        case 'Home':       // Standard "Home" key
-        case 'Enter':      // Mac "Return" key (Easier to press)
-          e.preventDefault(); // Stop it from triggering buttons if focused
+        case 'Home':       
+        case 'Enter':      
+          e.preventDefault(); 
           setTime(0);
+          break;
+        case 's':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleSaveProject();
+          }
           break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPresentationMode]);
+  }, [isPresentationMode, project]); 
 
   useEffect(() => {
     startLoop();
@@ -79,11 +137,39 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden font-sans">
+      
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleOpenProject} 
+        accept=".json" 
+        className="hidden" 
+      />
 
       {/* 1. TOOLBAR */}
       {!isPresentationMode && (
         <div className="h-14 border-b border-gray-700 flex items-center px-4 justify-between bg-[#1e1e1e] shrink-0">
           <div className="flex items-center gap-4">
+            
+            <div className="flex items-center gap-1 mr-4 border-r border-gray-700 pr-4">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-600"
+                title="Open Project"
+              >
+                <Upload size={14} />
+                OPEN
+              </button>
+              <button
+                onClick={handleSaveProject}
+                className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-600"
+                title="Save Project (Ctrl+S)"
+              >
+                <Download size={14} />
+                SAVE
+              </button>
+            </div>
+
             <button
               className={`flex items-center gap-2 px-6 py-1.5 rounded font-bold text-sm transition-all ${isPlaying
                   ? 'bg-red-500/10 text-red-500 border border-red-500/50 hover:bg-red-500 hover:text-white'
@@ -92,14 +178,14 @@ function App() {
               onClick={() => setIsPlaying(!isPlaying)}
             >
               {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-              {isPlaying ? 'PAUSE (Space)' : 'PLAY (Space)'}
+              {isPlaying ? 'PAUSE' : 'PLAY'}
             </button>
 
             <button
               className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-xs font-bold border border-gray-600"
               onClick={() => setTime(0)}
             >
-              Start Over (Home)
+              RESET
             </button>
 
             <div className="bg-black px-3 py-1 rounded border border-gray-700">
@@ -148,7 +234,6 @@ function App() {
           className={`flex-1 bg-[#111] relative flex items-center justify-center overflow-hidden transition-all duration-300 ${isPresentationMode ? 'fixed inset-0 z-50 bg-black cursor-none' : ''
             }`}
         >
-
           {isPresentationMode && (
             <button
               onClick={() => setPresentationMode(false)}
@@ -158,7 +243,6 @@ function App() {
             </button>
           )}
 
-          {/* The Actual Scalable Container */}
           <div
             className="relative shadow-2xl overflow-hidden bg-black transition-transform duration-300 ease-out origin-center will-change-transform"
             style={{

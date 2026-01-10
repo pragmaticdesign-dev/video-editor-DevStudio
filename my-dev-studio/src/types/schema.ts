@@ -31,6 +31,7 @@ export interface VisualObject {
 }
 
 export interface ProjectSchema {
+  name: string;
   meta: {
     duration: number; 
     fps: number;
