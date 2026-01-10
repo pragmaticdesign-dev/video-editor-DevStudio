@@ -1,72 +1,110 @@
 // src/components/stage/Renderer.tsx
-import React, { useMemo } from 'react';
+import React, { useRef } from 'react';
 import { useStore } from '../../store/useStore';
+import { getDefinition } from '../../registry';
 
 export const Renderer: React.FC = () => {
-  // We subscribe to specific parts of the store for performance
-  const objects = useStore((state) => state.project.objects);
-  const currentTime = useStore((state) => state.currentTime);
-  const selectObject = useStore((state) => state.selectObject); 
-  const selectedId = useStore((state) => state.selectedObjectId); 
-  return (
-    <div className="relative w-full h-full bg-black overflow-hidden"
-    onClick={() => selectObject(null)}
-    >
-        
-      {objects.map((obj) => {
-        // 1. Lifecycle Check: Should this exist right now?
-        const end = obj.start + obj.duration;
-        if (currentTime < obj.start || currentTime > end) {
-          return null; // Don't render
+    const { project, currentTime, selectObject, selectedObjectId } = useStore();
+    
+    // Separate Stage from Children
+    const stageObj = project.objects.find(o => o.type === 'stage');
+    const childObjects = project.objects.filter(o => o.type !== 'stage' && o.type !== 'audio');
+
+    // --- GLOBAL FRAME CACHE ---
+    // Stores the calculated CSS/State for every object in the current frame.
+    // This allows Object A to 'query' Object B's state without recalculating it 100 times.
+    const frameCache = useRef<Record<string, any>>({});
+    
+    // Reset cache at the start of every render (every frame)
+    frameCache.current = {};
+
+    // --- QUERY HELPER ---
+    // This function is injected into the user's Logic code.
+    // It allows them to write: const box = query('box_123');
+    const query = (id: string) => {
+        // 1. If we already calculated it this frame, return it.
+        if (frameCache.current[id]) {
+            return frameCache.current[id];
         }
 
-        // 2. Logic Execution
-        let style: React.CSSProperties = {};
-        const isSelected = selectedId === obj.id;
+        // 2. Otherwise, find the object and force a calculation.
+        const target = project.objects.find(o => o.id === id);
+        if (target) {
+            // Recursively call computeState.
+            // Note: This works because computeState relies on closure scope.
+            return computeState(target, currentTime);
+        }
+        return null;
+    };
 
+    // Helper: Execute User Logic safely
+    const computeState = (obj: any, t: number) => {
+        // Return cached if available
+        if (frameCache.current[obj.id]) return frameCache.current[obj.id];
+
+        const merged = { ...obj.properties };
         try {
-          // Create the sandbox function
-          // Note: In production, you might want to cache these functions 
-          // instead of recreating new Function() every frame if performance drops.
-          const logicFn = new Function('t', 'start', 'duration', obj.logic);
-          
-          // Execute user code
-          const result = logicFn(currentTime, obj.start, obj.duration);
-          
-          if (result && typeof result === 'object') {
-            style = result;
-          }
-        } catch (err) {
-          // Fail silently in renderer, or log to a debug console
-          // console.warn(`Error in object ${obj.id}:`, err);
-        }
+            // INJECT 'query' into the function scope
+            const logicFn = new Function('t', 'start', 'duration', 'props', 'query', obj.logic);
+            const dynamic = logicFn(t, obj.start, obj.duration, obj.properties, query);
+            
+            if (dynamic && typeof dynamic === 'object') {
+                Object.keys(dynamic).forEach((key) => {
+                    if (dynamic[key] !== undefined && dynamic[key] !== null) merged[key] = dynamic[key];
+                });
+            }
+        } catch (err) { /* ignore */ }
+        
+        // Save to cache
+        frameCache.current[obj.id] = merged;
+        return merged;
+    };
 
-        // 3. Render DOM
-        return (
-          <div
-            key={obj.id}
-            id={obj.id}
-            onClick={(e) => {
-              e.stopPropagation(); // Stop background click
-              selectObject(obj.id); // Select this object
-            }}
-            style={{
-              position: 'absolute',
-              ...style, // Apply the user's calculated CSS
-              // Add a visual border when selected so we know it worked
-              border: isSelected ? '2px solid #00ff00' : 'none', 
-              cursor: 'pointer'
-            }}
-            className="will-change-transform" // Performance hint for browser
-          >
-            {obj.type === 'img' ? (
-              <img src={obj.content} alt={obj.name} className="w-full h-full object-cover" />
-            ) : (
-              <div className="p-2 whitespace-pre-wrap">{obj.content}</div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+    // 1. Render Stage Container
+    let stageStyle: React.CSSProperties = { backgroundColor: '#000', overflow: 'hidden' };
+    if (stageObj) {
+        const result = computeState(stageObj, currentTime);
+        stageStyle = {
+            ...stageStyle,
+            backgroundColor: result.background,
+            transform: `scale(${result.zoom || 1}) translate(${result.x || 0}px, ${result.y || 0}px)`,
+            transformOrigin: 'center center'
+        };
+    }
+
+    return (
+        <div 
+            className="relative w-full h-full"
+            style={stageStyle} 
+            onClick={() => selectObject(stageObj?.id || null)}
+        >
+            {childObjects.map((obj) => {
+                const end = obj.start + obj.duration;
+                if (currentTime < obj.start || currentTime > end) return null;
+
+                const isSelected = selectedObjectId === obj.id;
+                const state = computeState(obj, currentTime);
+                const Def = getDefinition(obj.type);
+
+                if (!Def) return null;
+
+                return (
+                    <div
+                        key={obj.id}
+                        id={obj.id}
+                        onClick={(e) => { e.stopPropagation(); selectObject(obj.id); }}
+                        style={{
+                            position: 'absolute',
+                            ...state, 
+                            border: isSelected ? '1px dashed #00ff00' : 'none',
+                            cursor: 'pointer'
+                        }}
+                        className="will-change-transform"
+                    >
+                        <Def.Component object={obj} state={state} />
+                    </div>
+                );
+            })}
+        </div>
+    );
 };

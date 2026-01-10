@@ -9,4 +9,28 @@ html, body, #root {
   margin: 0;
   padding: 0;
   overflow: hidden; /* Stop scrolling on the main page */
+  background-color: #1e1e1e; /* Match app background */
+}
+
+@layer components {
+  /* The missing class that caused the white boxes */
+  .inspector-input {
+    @apply w-full bg-[#111] border border-[#333] text-white p-2 rounded text-xs focus:border-blue-500 outline-none transition-colors placeholder-gray-600;
+  }
+
+  /* Scrollbar styling for the dark theme */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1e1e1e; 
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #333; 
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #444; 
+  }
 }
