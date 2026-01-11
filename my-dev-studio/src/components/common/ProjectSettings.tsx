@@ -70,13 +70,14 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({ onClose }) => 
              />
           </div>
 
+          {/* --- Dimensions --- */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase">Width</label>
               <input 
                 type="number" 
                 value={meta.width}
-                onChange={(e) => setMeta({ ...meta, width: parseInt(e.target.value) })}
+                onChange={(e) => setMeta({ ...meta, width: parseInt(e.target.value) || 1920 })}
                 className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white"
               />
             </div>
@@ -85,7 +86,29 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({ onClose }) => 
               <input 
                 type="number" 
                 value={meta.height}
-                onChange={(e) => setMeta({ ...meta, height: parseInt(e.target.value) })}
+                onChange={(e) => setMeta({ ...meta, height: parseInt(e.target.value) || 1080 })}
+                className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white"
+              />
+            </div>
+          </div>
+
+          {/* --- Time & FPS (Added Back) --- */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Duration (s)</label>
+              <input 
+                type="number" 
+                value={meta.duration}
+                onChange={(e) => setMeta({ ...meta, duration: parseInt(e.target.value) || 10 })}
+                className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">FPS</label>
+              <input 
+                type="number" 
+                value={meta.fps}
+                onChange={(e) => setMeta({ ...meta, fps: parseInt(e.target.value) || 60 })}
                 className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white"
               />
             </div>

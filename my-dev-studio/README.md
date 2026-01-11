@@ -267,3 +267,81 @@ return {
 };
 
 ```
+
+
+### 🎛 The Nudge System (Middleware Stack)
+
+Sometimes you want to manually adjust an object (e.g., "Move this 50px to the right") without breaking its complex code-driven animation (e.g., "Bounce forever").
+
+**DevStudio** uses a **Middleware Pipeline** for every object. Instead of a single script, an object's state is calculated layer-by-layer.
+
+**The Pipeline:**
+`Base Logic(t)`  `Nudge 1`  `Nudge 2`  `Final CSS State`
+
+#### 1. The `prev` Variable
+
+Every Nudge receives a special variable called `prev`. This contains the calculated state of the object *before* the current nudge ran.
+
+* **Additive (Relative):** Use `prev` to modify the existing state.
+* **Override (Absolute):** Ignore `prev` to force a value.
+
+```javascript
+// Example: Nudge Code
+return {
+  ...prev,              // 1. Keep the base animation (e.g., bouncing)
+  x: prev.x + 50,       // 2. Add 50px to the calculated X position
+  opacity: 0.5          // 3. Force opacity to 50%
+};
+
+```
+
+#### 2. Time-Windowed Patches
+
+Unlike standard code, Nudges have a **Start Time** and **Duration**.
+
+* **Layout Fixes:** Set `duration: 9999`. The object stays moved from that point onward.
+* **Temporary Effects:** Set `duration: 0.5`. The effect (e.g., a "Glitch") applies for half a second and then automatically vanishes, restoring the original behavior.
+
+#### 3. How to Use (Workflow)
+
+1. **Select an Object** on the timeline.
+2. In the **Properties Panel**, look for the **"Logic Pipeline"** section at the bottom.
+3. Click **[+ Add Nudge]**.
+4. **Configure:**
+* **Name:** Give it a label (e.g., "Shift Top").
+* **Start/Duration:** Define when this patch is active.
+
+
+5. **Edit Code:** Click the `{}` icon to open the Logic Editor for that specific nudge.
+
+#### 4. Common Recipes
+
+**Recipe: Manual Layout Adjustment**
+*Scenario: Your code centers the object, but you want it near the top for a specific scene.*
+
+```javascript
+// Nudge: Move to Top
+return {
+  ...prev,
+  justifyContent: 'flex-start', // Override 'center'
+  paddingTop: '60px'
+};
+
+```
+
+**Recipe: The "Shake" Effect**
+*Scenario: Shake the object violently for 0.5 seconds.*
+
+```javascript
+// Nudge: Shake
+// duration: 0.5
+const intensity = 10;
+const shakeX = (Math.random() - 0.5) * intensity;
+const shakeY = (Math.random() - 0.5) * intensity;
+
+return {
+  ...prev,
+  transform: `${prev.transform || ''} translate(${shakeX}px, ${shakeY}px)`
+};
+
+```
