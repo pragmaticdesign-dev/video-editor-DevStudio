@@ -24,6 +24,7 @@ export const TimelineControls: React.FC = () => {
         id: generateId(def.type),
         type: def.type as any, // Schema type casting
         start: currentTime,
+        nudges: [],
         ...base
     });
   };
@@ -47,6 +48,7 @@ export const TimelineControls: React.FC = () => {
         id: generateId(type),
         type: type,
         start: currentTime,
+        nudges: [],
         ...base
       });
     };

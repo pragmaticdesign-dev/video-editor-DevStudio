@@ -1,12 +1,12 @@
 // src/store/useStore.ts
 import { create } from 'zustand';
-import type { ProjectSchema, VisualObject } from '../types/schema';
+import type { ProjectSchema, VisualObject, Nudge } from '../types/schema';
 
 const generateProjectName = () => `Project-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 1000)}`;
 
 // --- NEW: Helper to generate a fresh project ---
 const createDefaultProject = (): ProjectSchema => ({
-  name: generateProjectName(), 
+  name: generateProjectName(),
   meta: { duration: 10, fps: 60, width: 1920, height: 1080 },
   objects: [
     {
@@ -14,13 +14,14 @@ const createDefaultProject = (): ProjectSchema => ({
       type: 'stage',
       name: 'Stage (Camera)',
       start: 0,
-      duration: 9999, 
+      duration: 9999,
       properties: { background: '#000000', zoom: 1, x: 0, y: 0 },
       logic: `return {
   backgroundColor: props.background,
   transform: \`scale(\${props.zoom}) translate(\${props.x}px, \${props.y}px)\`,
   transformOrigin: 'center center'
-}`
+}`,
+      nudges: []
     },
     {
       id: 'demo_text',
@@ -36,7 +37,8 @@ return {
   color: props.color,
   fontSize: props.fontSize + 'px',
   display: 'flex', alignItems: 'center', justifyContent: 'center'
-};`
+};`,
+      nudges: []
     }
   ]
 });
@@ -45,7 +47,7 @@ interface EditorState {
   // 1. Playback State
   currentTime: number;
   isPlaying: boolean;
-  
+
   // 2. Project Data
   project: ProjectSchema;
   selectedObjectId: string | null;
@@ -54,16 +56,21 @@ interface EditorState {
   setTime: (time: number) => void;
   setIsPlaying: (playing: boolean) => void;
   selectObject: (id: string | null) => void;
-  
-  setProjectName: (name: string) => void; 
+
+  setProjectName: (name: string) => void;
   addObject: (obj: VisualObject) => void;
   updateObject: (id: string, payload: Partial<VisualObject>) => void;
   removeObject: (id: string) => void;
-  
+
   loadProject: (project: ProjectSchema) => void;
-  
+
   // --- NEW Action ---
   createNewProject: () => void;
+
+  // --- NUDGE ACTIONS ---
+  addNudge: (objectId: string, nudge: Nudge) => void;
+  updateNudge: (objectId: string, nudgeId: string, payload: Partial<Nudge>) => void;
+  removeNudge: (objectId: string, nudgeId: string) => void;
 }
 
 export const useStore = create<EditorState>((set) => ({
@@ -88,7 +95,7 @@ export const useStore = create<EditorState>((set) => ({
   updateObject: (id, payload) => set((state) => ({
     project: {
       ...state.project,
-      objects: state.project.objects.map((o) => 
+      objects: state.project.objects.map((o) =>
         o.id === id ? { ...o, ...payload } : o
       )
     }
@@ -106,11 +113,11 @@ export const useStore = create<EditorState>((set) => ({
     selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId
   })),
 
-  loadProject: (newProject) => set({ 
+  loadProject: (newProject) => set({
     project: newProject,
-    currentTime: 0,     
-    isPlaying: false,   
-    selectedObjectId: null 
+    currentTime: 0,
+    isPlaying: false,
+    selectedObjectId: null
   }),
 
   // --- NEW: Create New Project Logic ---
@@ -119,5 +126,43 @@ export const useStore = create<EditorState>((set) => ({
     currentTime: 0,
     isPlaying: false,
     selectedObjectId: null
-  })
+  }),
+  
+  // --- NUDGE IMPLEMENTATION ---
+  addNudge: (objectId, nudge) => set((state) => ({
+    project: {
+      ...state.project,
+      objects: state.project.objects.map((o) => {
+        if (o.id !== objectId) return o;
+        return { ...o, nudges: [...(o.nudges || []), nudge] };
+      })
+    }
+  })),
+
+  updateNudge: (objectId, nudgeId, payload) => set((state) => ({
+    project: {
+      ...state.project,
+      objects: state.project.objects.map((o) => {
+        if (o.id !== objectId) return o;
+        return { 
+          ...o, 
+          nudges: (o.nudges || []).map(n => n.id === nudgeId ? { ...n, ...payload } : n) 
+        };
+      })
+    }
+  })),
+
+  removeNudge: (objectId, nudgeId) => set((state) => ({
+    project: {
+      ...state.project,
+      objects: state.project.objects.map((o) => {
+        if (o.id !== objectId) return o;
+        return { 
+          ...o, 
+          nudges: (o.nudges || []).filter(n => n.id !== nudgeId) 
+        };
+      })
+    }
+  }))
+
 }));

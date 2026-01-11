@@ -14,6 +14,16 @@ export type ObjectType =
   | 'custom_html'
   | 'stage'; // I/O
 
+
+  export interface Nudge {
+  id: string;
+  name: string;        // e.g., "Manual Shift", "Glitch Effect"
+  start: number;       // Activation time
+  duration: number;    // How long it lasts (9999 for infinite)
+  logic: string;       // The patch code: (t, props, prev) => style
+  active: boolean;     // Toggle for quick debugging
+}
+
 export interface VisualObject {
   id: string;
   type: ObjectType;
@@ -28,6 +38,9 @@ export interface VisualObject {
 
   // The logic string that receives (t, start, duration, props)
   logic: string; 
+
+  // The Middleware Stack
+  nudges: Nudge[];
 }
 
 export interface ProjectSchema {
